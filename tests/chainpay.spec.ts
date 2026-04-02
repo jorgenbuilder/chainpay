@@ -388,5 +388,142 @@ describe('ChainPay Backend', () => {
       const history = await aliceActor.linkPaymentHistory(id);
       expect(history).toHaveLength(0);
     });
+
+    it('should reject anonymous from viewing payment history', async () => {
+      const id = await createTestLink(aliceActor, { title: 'Anon History' });
+      await expect(
+        anonActor.linkPaymentHistory(id),
+      ).rejects.toThrow(/Anonymous callers not allowed/);
+    });
+  });
+
+  // ---- Input Validation Edge Cases ----
+
+  describe('Input validation', () => {
+    it('should accept title with exactly 100 characters', async () => {
+      const id = await createTestLink(aliceActor, { title: 'a'.repeat(100) });
+      expect(id).toBeTruthy();
+    });
+
+    it('should accept description with exactly 500 characters', async () => {
+      const id = await createTestLink(aliceActor, {
+        description: 'b'.repeat(500),
+      });
+      expect(id).toBeTruthy();
+    });
+
+    it('should accept minimum valid amount (1 e8s)', async () => {
+      const id = await createTestLink(aliceActor, { amount: 1n });
+      const info = await aliceActor.getLink(id);
+      expect(info[0]!.amount).toBe(1n);
+    });
+
+    it('should handle large amounts correctly', async () => {
+      const largeAmount = 1_000_000_000_000n; // 10,000 ICP
+      const id = await createTestLink(aliceActor, { amount: largeAmount });
+      const info = await aliceActor.getLink(id);
+      expect(info[0]!.amount).toBe(largeAmount);
+    });
+  });
+
+  // ---- HTTP Payment Page Content ----
+
+  describe('HTTP payment page content', () => {
+    it('should render ckBTC payment page correctly', async () => {
+      const id = await createTestLink(aliceActor, {
+        title: 'BTC Page Test',
+        amount: 50_000n, // 0.0005 ckBTC
+        method: { ckbtc: null },
+      });
+
+      const response = await aliceActor.http_request({
+        method: 'GET',
+        url: `/pay/${id}`,
+        headers: [],
+        body: new Uint8Array(),
+      });
+
+      expect(response.status_code).toBe(200);
+      const body = new TextDecoder().decode(response.body);
+      expect(body).toContain('BTC Page Test');
+      expect(body).toContain('ckBTC');
+      expect(body).toContain('0.0005 ckBTC');
+    });
+
+    it('should render fractional ICP amounts correctly', async () => {
+      const id = await createTestLink(aliceActor, {
+        title: 'Fractional Test',
+        amount: 150_000_000n, // 1.5 ICP
+      });
+
+      const response = await aliceActor.http_request({
+        method: 'GET',
+        url: `/pay/${id}`,
+        headers: [],
+        body: new Uint8Array(),
+      });
+
+      const body = new TextDecoder().decode(response.body);
+      expect(body).toContain('1.5 ICP');
+    });
+
+    it('should escape HTML in title and description', async () => {
+      const id = await createTestLink(aliceActor, {
+        title: 'Test <script>alert(1)</script>',
+        description: 'Desc & "quotes"',
+      });
+
+      const response = await aliceActor.http_request({
+        method: 'GET',
+        url: `/pay/${id}`,
+        headers: [],
+        body: new Uint8Array(),
+      });
+
+      const body = new TextDecoder().decode(response.body);
+      expect(body).not.toContain('<script>');
+      expect(body).toContain('&lt;script&gt;');
+      expect(body).toContain('&amp;');
+    });
+
+    it('should handle URL query params gracefully', async () => {
+      const id = await createTestLink(aliceActor, { title: 'Query Test' });
+
+      const response = await aliceActor.http_request({
+        method: 'GET',
+        url: `/pay/${id}?foo=bar`,
+        headers: [],
+        body: new Uint8Array(),
+      });
+
+      expect(response.status_code).toBe(200);
+      const body = new TextDecoder().decode(response.body);
+      expect(body).toContain('Query Test');
+    });
+  });
+
+  // ---- Concurrent Link Creation ----
+
+  describe('Concurrent operations', () => {
+    it('should handle multiple users creating links simultaneously', async () => {
+      const [aliceId, bobId, eveId] = await Promise.all([
+        createTestLink(aliceActor, { title: 'Alice Concurrent' }),
+        createTestLink(bobActor, { title: 'Bob Concurrent' }),
+        createTestLink(eveActor, { title: 'Eve Concurrent' }),
+      ]);
+
+      // All IDs should be unique
+      const ids = new Set([aliceId, bobId, eveId]);
+      expect(ids.size).toBe(3);
+
+      // Each user should see their own link
+      const aliceLinks = await aliceActor.myLinks();
+      const bobLinks = await bobActor.myLinks();
+      const eveLinks = await eveActor.myLinks();
+
+      expect(aliceLinks.some((l: PaymentLinkInfo) => l.id === aliceId)).toBe(true);
+      expect(bobLinks.some((l: PaymentLinkInfo) => l.id === bobId)).toBe(true);
+      expect(eveLinks.some((l: PaymentLinkInfo) => l.id === eveId)).toBe(true);
+    });
   });
 });

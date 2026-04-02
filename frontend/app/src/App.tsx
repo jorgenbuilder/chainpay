@@ -90,6 +90,7 @@ export default function App() {
   const [paymentAddress, setPaymentAddress] = useState("");
   const [payStep, setPayStep] = useState<"info" | "address" | "confirm">("info");
   const [confirmLoading, setConfirmLoading] = useState(false);
+  const [usdEstimate, setUsdEstimate] = useState("");
 
   // Form state
   const [title, setTitle] = useState("");
@@ -119,13 +120,23 @@ export default function App() {
     }
   }, []);
 
-  // Load pay link info
+  // Load pay link info and USD price
   useEffect(() => {
     if (view === "pay" && payLinkId) {
       const actor = makeActor();
       actor.getLink(payLinkId).then((result: PaymentLinkInfo | null) => {
         if (result) {
           setPayLinkInfo(result);
+          // Fetch USD price
+          actor.getUsdPrices().then((prices) => {
+            const m = getMethod(result);
+            const price = m === "icp" ? prices.icpUsd : prices.btcUsd;
+            const amountFloat = Number(result.amount) / 100_000_000;
+            const usd = (amountFloat * price).toFixed(2);
+            setUsdEstimate(`~$${usd} USD`);
+          }).catch(() => {
+            // Price feed may fail, that's OK
+          });
         }
       });
     }
@@ -493,9 +504,13 @@ export default function App() {
                 <div className="text-4xl font-bold text-brand mb-1">
                   {formatAmount(payLinkInfo.amount, getMethod(payLinkInfo))}
                 </div>
-                <div className="text-sm text-gray-500 mb-6">
+                <div className="text-sm text-gray-500 mb-1">
                   Pay with {getMethod(payLinkInfo) === "icp" ? "ICP" : "ckBTC"}
                 </div>
+                {usdEstimate && (
+                  <div className="text-sm text-gray-600 mb-6">{usdEstimate}</div>
+                )}
+                {!usdEstimate && <div className="mb-6" />}
 
                 {payLinkInfo.active ? (
                   <div className="space-y-4">
