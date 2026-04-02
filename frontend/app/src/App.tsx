@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
-import { createActor, PaymentMethod, type PaymentLinkInfo, type Account } from "./backend/api/backend";
+import { createActor, PaymentMethod, type PaymentLinkInfo, type Account, type Result } from "./backend/api/backend";
 import { getCanisterEnv } from "@icp-sdk/core/agent/canister-env";
 import { AuthClient } from "@icp-sdk/auth/client";
+import { Principal } from "@icp-sdk/core/principal";
 import type { Identity } from "@icp-sdk/core/agent";
 
 // Environment
@@ -42,6 +43,39 @@ function getMethod(link: PaymentLinkInfo): string {
   return link.method === PaymentMethod.icp ? "icp" : "ckbtc";
 }
 
+// CRC-32 for ICRC-1 account checksum
+function crc32(data: Uint8Array): number {
+  let crc = 0xffffffff;
+  for (const byte of data) {
+    crc ^= byte;
+    for (let j = 0; j < 8; j++) {
+      crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function formatIcrc1Account(owner: string, subaccount?: Uint8Array): string {
+  const sub = subaccount ?? new Uint8Array(32);
+  if (sub.every((b) => b === 0)) return owner;
+
+  const principalBytes = Principal.fromText(owner).toUint8Array();
+  const checksumInput = new Uint8Array(principalBytes.length + 32);
+  checksumInput.set(principalBytes, 0);
+  checksumInput.set(sub, principalBytes.length);
+  const checksum = crc32(checksumInput);
+  const checksumHex = checksum.toString(16).padStart(8, "0");
+
+  let lastNonZero = 31;
+  while (lastNonZero > 0 && sub[lastNonZero] === 0) lastNonZero--;
+  const trimmed = sub.slice(0, lastNonZero + 1);
+  const subHex = Array.from(trimmed)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+
+  return `${owner}-${checksumHex}.${subHex}`;
+}
+
 export default function App() {
   const [view, setView] = useState<View>("home");
   const [authClient, setAuthClient] = useState<AuthClient | null>(null);
@@ -53,6 +87,9 @@ export default function App() {
   const [success, setSuccess] = useState("");
   const [payLinkId, setPayLinkId] = useState("");
   const [payLinkInfo, setPayLinkInfo] = useState<PaymentLinkInfo | null>(null);
+  const [paymentAddress, setPaymentAddress] = useState("");
+  const [payStep, setPayStep] = useState<"info" | "address" | "confirm">("info");
+  const [confirmLoading, setConfirmLoading] = useState(false);
 
   // Form state
   const [title, setTitle] = useState("");
@@ -449,11 +486,11 @@ export default function App() {
                   {payLinkInfo.title}
                 </h2>
                 {payLinkInfo.description && (
-                  <p className="text-gray-400 mb-6">
+                  <p className="text-gray-400 mb-4">
                     {payLinkInfo.description}
                   </p>
                 )}
-                <div className="text-4xl font-bold text-brand mb-2">
+                <div className="text-4xl font-bold text-brand mb-1">
                   {formatAmount(payLinkInfo.amount, getMethod(payLinkInfo))}
                 </div>
                 <div className="text-sm text-gray-500 mb-6">
@@ -462,44 +499,163 @@ export default function App() {
 
                 {payLinkInfo.active ? (
                   <div className="space-y-4">
-                    <p className="text-sm text-gray-400">
-                      Send exactly{" "}
-                      <span className="text-brand font-bold">
-                        {formatAmount(payLinkInfo.amount, getMethod(payLinkInfo))}
-                      </span>{" "}
-                      to the canister's payment address for this link.
-                    </p>
-                    {isAuthenticated ? (
-                      <button
-                        onClick={async () => {
-                          try {
-                            const actor = makeActor(authClient!.getIdentity());
-                            const addr = await actor.getPaymentAddress(payLinkId);
-                            if (addr) {
-                              const ownerText = (addr as Account).owner.toText();
-                              const sub = (addr as Account).subaccount;
-                              const subHex = sub
-                                ? Array.from(sub).map((b: number) => b.toString(16).padStart(2, "0")).join("")
-                                : "";
-                              setSuccess(
-                                `Payment address: Owner=${ownerText} Subaccount=0x${subHex}`
-                              );
+                    {/* Step 1: Show payment instructions */}
+                    {payStep === "info" && (
+                      <>
+                        <div className="bg-bg rounded-xl p-4 text-left space-y-3">
+                          <h3 className="font-semibold text-sm">How to pay</h3>
+                          <div className="flex gap-3 items-start">
+                            <span className="bg-brand/20 text-brand rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold shrink-0">1</span>
+                            <p className="text-sm text-gray-300">Get the payment address below</p>
+                          </div>
+                          <div className="flex gap-3 items-start">
+                            <span className="bg-brand/20 text-brand rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold shrink-0">2</span>
+                            <p className="text-sm text-gray-300">
+                              Send exactly <span className="text-brand font-bold">{formatAmount(payLinkInfo.amount, getMethod(payLinkInfo))}</span> from your wallet (NNS, Plug, or CLI)
+                            </p>
+                          </div>
+                          <div className="flex gap-3 items-start">
+                            <span className="bg-brand/20 text-brand rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold shrink-0">3</span>
+                            <p className="text-sm text-gray-300">Come back here and confirm your payment</p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            try {
+                              const actor = makeActor(authClient?.getIdentity());
+                              const addr = await actor.getPaymentAddress(payLinkId);
+                              if (addr) {
+                                const account = addr as Account;
+                                const ownerText = account.owner.toText();
+                                const sub = account.subaccount
+                                  ? new Uint8Array(account.subaccount)
+                                  : undefined;
+                                const formatted = formatIcrc1Account(ownerText, sub);
+                                setPaymentAddress(formatted);
+                                setPayStep("address");
+                              }
+                            } catch (e: unknown) {
+                              setError((e as Error).message);
                             }
-                          } catch (e: unknown) {
-                            setError((e as Error).message);
-                          }
-                        }}
-                        className="w-full py-3 bg-brand text-black font-bold rounded-lg hover:bg-brand-dark transition cursor-pointer"
-                      >
-                        Show Payment Address
-                      </button>
-                    ) : (
-                      <button
-                        onClick={login}
-                        className="w-full py-3 bg-brand text-black font-bold rounded-lg hover:bg-brand-dark transition cursor-pointer"
-                      >
-                        Sign in to Pay
-                      </button>
+                          }}
+                          className="w-full py-3 bg-brand text-black font-bold rounded-lg hover:bg-brand-dark transition cursor-pointer"
+                        >
+                          Get Payment Address
+                        </button>
+                      </>
+                    )}
+
+                    {/* Step 2: Show copyable address */}
+                    {payStep === "address" && paymentAddress && (
+                      <>
+                        <div className="bg-bg rounded-xl p-4 text-left">
+                          <div className="flex items-center justify-between mb-2">
+                            <h3 className="font-semibold text-sm">Send {getMethod(payLinkInfo) === "icp" ? "ICP" : "ckBTC"} to this address</h3>
+                          </div>
+                          <div
+                            className="bg-surface-light rounded-lg p-3 font-mono text-xs break-all text-brand cursor-pointer hover:bg-white/5 transition relative group"
+                            onClick={() => {
+                              navigator.clipboard.writeText(paymentAddress);
+                              setSuccess("Address copied to clipboard!");
+                            }}
+                          >
+                            {paymentAddress}
+                            <span className="absolute top-2 right-2 text-gray-500 text-xs opacity-0 group-hover:opacity-100 transition">
+                              click to copy
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-500 mt-2">
+                            This is an ICRC-1 account address. Paste it into your wallet's "Send" field.
+                          </p>
+                        </div>
+
+                        <div className="bg-bg rounded-xl p-4 text-left">
+                          <h3 className="font-semibold text-sm mb-2">Amount to send</h3>
+                          <div
+                            className="bg-surface-light rounded-lg p-3 font-mono text-lg text-brand cursor-pointer hover:bg-white/5 transition"
+                            onClick={() => {
+                              const whole = payLinkInfo!.amount / 100_000_000n;
+                              const frac = payLinkInfo!.amount % 100_000_000n;
+                              const numStr = frac === 0n
+                                ? whole.toString()
+                                : `${whole}.${frac.toString().padStart(8, "0").replace(/0+$/, "")}`;
+                              navigator.clipboard.writeText(numStr);
+                              setSuccess("Amount copied!");
+                            }}
+                          >
+                            {formatAmount(payLinkInfo.amount, getMethod(payLinkInfo))}
+                          </div>
+                          <p className="text-xs text-gray-500 mt-1">Click to copy amount</p>
+                        </div>
+
+                        <button
+                          onClick={() => setPayStep("confirm")}
+                          className="w-full py-3 bg-brand text-black font-bold rounded-lg hover:bg-brand-dark transition cursor-pointer"
+                        >
+                          I've Sent the Payment
+                        </button>
+                        <button
+                          onClick={() => setPayStep("info")}
+                          className="w-full py-2 text-gray-500 text-sm hover:text-white transition cursor-pointer bg-transparent border-none"
+                        >
+                          Back
+                        </button>
+                      </>
+                    )}
+
+                    {/* Step 3: Confirm payment */}
+                    {payStep === "confirm" && (
+                      <>
+                        <div className="bg-bg rounded-xl p-4 text-left">
+                          <h3 className="font-semibold text-sm mb-2">Verify your payment</h3>
+                          <p className="text-sm text-gray-400">
+                            Click below to check if your payment has arrived. The canister will verify the balance on-chain.
+                          </p>
+                        </div>
+                        {isAuthenticated ? (
+                          <button
+                            disabled={confirmLoading}
+                            onClick={async () => {
+                              setConfirmLoading(true);
+                              setError("");
+                              try {
+                                const actor = makeActor(authClient!.getIdentity());
+                                const result = await actor.confirmPayment({
+                                  linkId: payLinkId,
+                                  blockIndex: 0n,
+                                });
+                                const r = result as Result;
+                                if ("ok" in r) {
+                                  setSuccess(`Payment confirmed! Payment ID: ${r.ok}`);
+                                  setPayStep("info");
+                                } else if ("err" in r) {
+                                  setError(r.err);
+                                }
+                              } catch (e: unknown) {
+                                setError((e as Error).message);
+                              } finally {
+                                setConfirmLoading(false);
+                              }
+                            }}
+                            className="w-full py-3 bg-green-500 text-black font-bold rounded-lg hover:bg-green-400 transition disabled:opacity-50 cursor-pointer"
+                          >
+                            {confirmLoading ? "Checking..." : "Check Payment"}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={login}
+                            className="w-full py-3 bg-brand text-black font-bold rounded-lg hover:bg-brand-dark transition cursor-pointer"
+                          >
+                            Sign in to Confirm Payment
+                          </button>
+                        )}
+                        <button
+                          onClick={() => setPayStep("address")}
+                          className="w-full py-2 text-gray-500 text-sm hover:text-white transition cursor-pointer bg-transparent border-none"
+                        >
+                          Back to Address
+                        </button>
+                      </>
                     )}
                   </div>
                 ) : (
