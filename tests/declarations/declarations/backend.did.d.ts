@@ -75,6 +75,18 @@ export interface PriceData {
 }
 export type Result = { 'ok' : string } |
   { 'err' : string };
+export type TransferError = {
+    'GenericError' : { 'message' : string, 'error_code' : bigint }
+  } |
+  { 'TemporarilyUnavailable' : null } |
+  { 'BadBurn' : { 'min_burn_amount' : bigint } } |
+  { 'Duplicate' : { 'duplicate_of' : bigint } } |
+  { 'BadFee' : { 'expected_fee' : bigint } } |
+  { 'CreatedInFuture' : { 'ledger_time' : bigint } } |
+  { 'TooOld' : null } |
+  { 'InsufficientFunds' : { 'balance' : bigint } };
+export type TransferResult = { 'Ok' : bigint } |
+  { 'Err' : TransferError };
 export interface _SERVICE {
   'confirmPayment' : ActorMethod<[ConfirmPaymentArgs], Result>,
   'createLink' : ActorMethod<[CreateLinkArgs], string>,
@@ -87,6 +99,10 @@ export interface _SERVICE {
   'linkPaymentHistory' : ActorMethod<[string], Array<Payment>>,
   'myLinks' : ActorMethod<[], Array<PaymentLinkInfo>>,
   'reactivateLink' : ActorMethod<[string], undefined>,
+  'rescueFunds' : ActorMethod<
+    [Uint8Array, Account, bigint, Principal],
+    TransferResult
+  >,
   'stats' : ActorMethod<
     [],
     { 'totalPayments' : bigint, 'totalLinks' : bigint, 'activeLinks' : bigint }

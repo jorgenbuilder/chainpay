@@ -13,7 +13,7 @@ export const idlFactory = ({ IDL }) => {
     'blockIndex' : IDL.Nat,
     'linkId' : IDL.Text,
   });
-  const Result = IDL.Variant({ 'ok' : IDL.Text, 'err' : IDL.Text });
+  const Result_1 = IDL.Variant({ 'ok' : IDL.Text, 'err' : IDL.Text });
   const PaymentMethod = IDL.Variant({ 'icp' : IDL.Null, 'ckbtc' : IDL.Null });
   const CreateLinkArgs = IDL.Record({
     'method' : PaymentMethod,
@@ -71,15 +71,30 @@ export const idlFactory = ({ IDL }) => {
     'amount' : IDL.Nat,
     'linkId' : IDL.Text,
   });
+  const TransferError = IDL.Variant({
+    'GenericError' : IDL.Record({
+      'message' : IDL.Text,
+      'error_code' : IDL.Nat,
+    }),
+    'TemporarilyUnavailable' : IDL.Null,
+    'BadBurn' : IDL.Record({ 'min_burn_amount' : IDL.Nat }),
+    'Duplicate' : IDL.Record({ 'duplicate_of' : IDL.Nat }),
+    'BadFee' : IDL.Record({ 'expected_fee' : IDL.Nat }),
+    'CreatedInFuture' : IDL.Record({ 'ledger_time' : IDL.Nat64 }),
+    'TooOld' : IDL.Null,
+    'InsufficientFunds' : IDL.Record({ 'balance' : IDL.Nat }),
+  });
+  const TransferResult = IDL.Variant({ 'Ok' : IDL.Nat, 'Err' : TransferError });
   const HttpHeader = IDL.Record({ 'value' : IDL.Text, 'name' : IDL.Text });
   const HttpResponsePayload = IDL.Record({
     'status' : IDL.Nat,
     'body' : IDL.Vec(IDL.Nat8),
     'headers' : IDL.Vec(HttpHeader),
   });
+  const Result = IDL.Variant({ 'ok' : IDL.Nat, 'err' : IDL.Text });
   
   return IDL.Service({
-    'confirmPayment' : IDL.Func([ConfirmPaymentArgs], [Result], []),
+    'confirmPayment' : IDL.Func([ConfirmPaymentArgs], [Result_1], []),
     'createLink' : IDL.Func([CreateLinkArgs], [IDL.Text], []),
     'deactivateLink' : IDL.Func([IDL.Text], [], []),
     'getCkbtcDepositAddress' : IDL.Func([IDL.Text], [IDL.Text], []),
@@ -88,8 +103,14 @@ export const idlFactory = ({ IDL }) => {
     'getUsdPrices' : IDL.Func([], [PriceData], []),
     'http_request' : IDL.Func([HttpRequest], [HttpResponse], ['query']),
     'linkPaymentHistory' : IDL.Func([IDL.Text], [IDL.Vec(Payment)], ['query']),
+    'myBalance' : IDL.Func([IDL.Principal], [IDL.Nat], []),
     'myLinks' : IDL.Func([], [IDL.Vec(PaymentLinkInfo)], ['query']),
     'reactivateLink' : IDL.Func([IDL.Text], [], []),
+    'rescueFunds' : IDL.Func(
+        [IDL.Vec(IDL.Nat8), Account, IDL.Nat, IDL.Principal],
+        [TransferResult],
+        [],
+      ),
     'stats' : IDL.Func(
         [],
         [
@@ -111,6 +132,7 @@ export const idlFactory = ({ IDL }) => {
         [HttpResponsePayload],
         ['query'],
       ),
+    'withdraw' : IDL.Func([IDL.Text, IDL.Nat, PaymentMethod], [Result], []),
   });
 };
 

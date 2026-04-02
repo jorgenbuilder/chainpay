@@ -98,6 +98,44 @@ Not necessarily wrong, but the type incompatibility between `declarations/*.did.
 
 ---
 
+### Friction Point 8: ICRC-1 subaccount byte ordering caused lost funds
+**Time lost:** ~20 min
+**Category:** icrc-ledger, agent error
+
+The agent implemented subaccount derivation by left-aligning the link ID bytes: `[0x31, 0, 0, ..., 0]` (link ID "1" = ASCII 0x31 at byte 0). The ICRC-1 trimmed account format then displayed this as `...checksum.31`.
+
+When the user sent ICP via `dfx ledger transfer --to-subaccount 00000...0031`, dfx interpreted the hex as right-aligned (0x31 at byte 31), creating a mismatch. The canister checked the left-aligned subaccount and found 0 balance. The 1 ICP was stranded in the wrong subaccount.
+
+Root cause: The ICRC-1 trimmed subaccount format is inherently ambiguous about byte position. A trimmed value of `31` could mean byte 0 = 0x31 (left-aligned) or byte 31 = 0x31 (right-aligned). dfx and most wallets interpret it right-aligned.
+
+Fixed by right-aligning subaccount bytes and adding a controller rescue function. Funds were recovered.
+
+**Suggestion:** The icrc-ledger skill should explicitly document subaccount byte ordering conventions and warn about the left-align trap.
+
+---
+
+### Friction Point 9: No wallet functionality = unusable payment flow
+**Time lost:** ~15 min
+**Category:** UX / agent oversight
+
+The agent built a payment confirmation flow that forwarded received funds to the creator's principal, but provided no way for users to view their balance or withdraw funds within the app. When the rescue function sent funds to the link creator's II principal, those funds were effectively inaccessible since the app had no wallet view.
+
+This is an agent UX blind spot: it built the "happy path" (create link -> receive payment) without considering what happens after funds arrive. A payment app without wallet management is incomplete.
+
+Fixed by adding a Wallet view with balance display and send functionality.
+
+---
+
+### Friction Point 10: Initial payment address display was raw technical data
+**Time lost:** ~10 min
+**Category:** UX / agent oversight
+
+The first version of "Show Payment Address" displayed raw `Owner=52253-7yaaa... Subaccount=0x31000...` text, which is completely unusable for end users. Had to redesign into a proper 3-step flow with ICRC-1 formatted addresses and click-to-copy.
+
+The agent's default instinct is to show debug-level data. Payment UX must be self-explanatory and wallet-compatible.
+
+---
+
 ### What Went Well
 
 1. **icp-cli build/deploy pipeline** - Once configured, `icp build` and `icp deploy` worked flawlessly. The recipe system is much cleaner than raw dfx config.

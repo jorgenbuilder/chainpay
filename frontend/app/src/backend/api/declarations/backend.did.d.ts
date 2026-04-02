@@ -73,10 +73,24 @@ export interface PriceData {
   'icpUsd' : number,
   'updatedAt' : bigint,
 }
-export type Result = { 'ok' : string } |
+export type Result = { 'ok' : bigint } |
   { 'err' : string };
+export type Result_1 = { 'ok' : string } |
+  { 'err' : string };
+export type TransferError = {
+    'GenericError' : { 'message' : string, 'error_code' : bigint }
+  } |
+  { 'TemporarilyUnavailable' : null } |
+  { 'BadBurn' : { 'min_burn_amount' : bigint } } |
+  { 'Duplicate' : { 'duplicate_of' : bigint } } |
+  { 'BadFee' : { 'expected_fee' : bigint } } |
+  { 'CreatedInFuture' : { 'ledger_time' : bigint } } |
+  { 'TooOld' : null } |
+  { 'InsufficientFunds' : { 'balance' : bigint } };
+export type TransferResult = { 'Ok' : bigint } |
+  { 'Err' : TransferError };
 export interface _SERVICE {
-  'confirmPayment' : ActorMethod<[ConfirmPaymentArgs], Result>,
+  'confirmPayment' : ActorMethod<[ConfirmPaymentArgs], Result_1>,
   'createLink' : ActorMethod<[CreateLinkArgs], string>,
   'deactivateLink' : ActorMethod<[string], undefined>,
   'getCkbtcDepositAddress' : ActorMethod<[string], string>,
@@ -85,8 +99,13 @@ export interface _SERVICE {
   'getUsdPrices' : ActorMethod<[], PriceData>,
   'http_request' : ActorMethod<[HttpRequest], HttpResponse>,
   'linkPaymentHistory' : ActorMethod<[string], Array<Payment>>,
+  'myBalance' : ActorMethod<[Principal], bigint>,
   'myLinks' : ActorMethod<[], Array<PaymentLinkInfo>>,
   'reactivateLink' : ActorMethod<[string], undefined>,
+  'rescueFunds' : ActorMethod<
+    [Uint8Array, Account, bigint, Principal],
+    TransferResult
+  >,
   'stats' : ActorMethod<
     [],
     { 'totalPayments' : bigint, 'totalLinks' : bigint, 'activeLinks' : bigint }
@@ -95,6 +114,7 @@ export interface _SERVICE {
     [{ 'context' : Uint8Array, 'response' : HttpResponsePayload }],
     HttpResponsePayload
   >,
+  'withdraw' : ActorMethod<[string, bigint, PaymentMethod], Result>,
 }
 export declare const idlFactory: IDL.InterfaceFactory;
 export declare const init: (args: { IDL: typeof IDL }) => IDL.Type[];

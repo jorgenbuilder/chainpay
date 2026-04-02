@@ -71,6 +71,20 @@ export const idlFactory = ({ IDL }) => {
     'amount' : IDL.Nat,
     'linkId' : IDL.Text,
   });
+  const TransferError = IDL.Variant({
+    'GenericError' : IDL.Record({
+      'message' : IDL.Text,
+      'error_code' : IDL.Nat,
+    }),
+    'TemporarilyUnavailable' : IDL.Null,
+    'BadBurn' : IDL.Record({ 'min_burn_amount' : IDL.Nat }),
+    'Duplicate' : IDL.Record({ 'duplicate_of' : IDL.Nat }),
+    'BadFee' : IDL.Record({ 'expected_fee' : IDL.Nat }),
+    'CreatedInFuture' : IDL.Record({ 'ledger_time' : IDL.Nat64 }),
+    'TooOld' : IDL.Null,
+    'InsufficientFunds' : IDL.Record({ 'balance' : IDL.Nat }),
+  });
+  const TransferResult = IDL.Variant({ 'Ok' : IDL.Nat, 'Err' : TransferError });
   const HttpHeader = IDL.Record({ 'value' : IDL.Text, 'name' : IDL.Text });
   const HttpResponsePayload = IDL.Record({
     'status' : IDL.Nat,
@@ -90,6 +104,11 @@ export const idlFactory = ({ IDL }) => {
     'linkPaymentHistory' : IDL.Func([IDL.Text], [IDL.Vec(Payment)], ['query']),
     'myLinks' : IDL.Func([], [IDL.Vec(PaymentLinkInfo)], ['query']),
     'reactivateLink' : IDL.Func([IDL.Text], [], []),
+    'rescueFunds' : IDL.Func(
+        [IDL.Vec(IDL.Nat8), Account, IDL.Nat, IDL.Principal],
+        [TransferResult],
+        [],
+      ),
     'stats' : IDL.Func(
         [],
         [

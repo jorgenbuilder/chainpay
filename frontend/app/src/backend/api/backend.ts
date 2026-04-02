@@ -60,9 +60,35 @@ export interface Account {
     owner: Principal;
     subaccount?: Uint8Array;
 }
-export type Result = {
+export interface Payment {
+    id: string;
+    status: PaymentStatus;
+    method: PaymentMethod;
+    createdAt: bigint;
+    confirmedAt?: bigint;
+    txId?: bigint;
+    payer: Principal;
+    amount: bigint;
+    linkId: string;
+}
+export type Result_1 = {
     __kind__: "ok";
     ok: string;
+} | {
+    __kind__: "err";
+    err: string;
+};
+export interface HttpHeader {
+    value: string;
+    name: string;
+}
+export interface ConfirmPaymentArgs {
+    blockIndex: bigint;
+    linkId: string;
+}
+export type Result = {
+    __kind__: "ok";
+    ok: bigint;
 } | {
     __kind__: "err";
     err: string;
@@ -72,6 +98,13 @@ export interface HttpResponsePayload {
     body: Uint8Array;
     headers: Array<HttpHeader>;
 }
+export type TransferResult = {
+    __kind__: "Ok";
+    Ok: bigint;
+} | {
+    __kind__: "Err";
+    Err: TransferError;
+};
 export interface PaymentLinkInfo {
     id: string;
     method: PaymentMethod;
@@ -97,31 +130,50 @@ export interface CreateLinkArgs {
     description: string;
     amount: bigint;
 }
-export interface Payment {
-    id: string;
-    status: PaymentStatus;
-    method: PaymentMethod;
-    createdAt: bigint;
-    confirmedAt?: bigint;
-    txId?: bigint;
-    payer: Principal;
-    amount: bigint;
-    linkId: string;
-}
 export interface HttpRequest {
     url: string;
     method: string;
     body: Uint8Array;
     headers: Array<[string, string]>;
 }
-export interface HttpHeader {
-    value: string;
-    name: string;
-}
-export interface ConfirmPaymentArgs {
-    blockIndex: bigint;
-    linkId: string;
-}
+export type TransferError = {
+    __kind__: "GenericError";
+    GenericError: {
+        message: string;
+        error_code: bigint;
+    };
+} | {
+    __kind__: "TemporarilyUnavailable";
+    TemporarilyUnavailable: null;
+} | {
+    __kind__: "BadBurn";
+    BadBurn: {
+        min_burn_amount: bigint;
+    };
+} | {
+    __kind__: "Duplicate";
+    Duplicate: {
+        duplicate_of: bigint;
+    };
+} | {
+    __kind__: "BadFee";
+    BadFee: {
+        expected_fee: bigint;
+    };
+} | {
+    __kind__: "CreatedInFuture";
+    CreatedInFuture: {
+        ledger_time: bigint;
+    };
+} | {
+    __kind__: "TooOld";
+    TooOld: null;
+} | {
+    __kind__: "InsufficientFunds";
+    InsufficientFunds: {
+        balance: bigint;
+    };
+};
 export enum PaymentMethod {
     icp = "icp",
     ckbtc = "ckbtc"
@@ -132,7 +184,7 @@ export enum PaymentStatus {
     confirmed = "confirmed"
 }
 export interface backendInterface {
-    confirmPayment(args: ConfirmPaymentArgs): Promise<Result>;
+    confirmPayment(args: ConfirmPaymentArgs): Promise<Result_1>;
     createLink(args: CreateLinkArgs): Promise<string>;
     deactivateLink(linkId: string): Promise<void>;
     getCkbtcDepositAddress(linkId: string): Promise<string>;
@@ -141,8 +193,10 @@ export interface backendInterface {
     getUsdPrices(): Promise<PriceData>;
     http_request(req: HttpRequest): Promise<HttpResponse>;
     linkPaymentHistory(linkId: string): Promise<Array<Payment>>;
+    myBalance(ledgerPrincipal: Principal): Promise<bigint>;
     myLinks(): Promise<Array<PaymentLinkInfo>>;
     reactivateLink(linkId: string): Promise<void>;
+    rescueFunds(fromSubaccount: Uint8Array, to: Account, amount: bigint, ledgerPrincipal: Principal): Promise<TransferResult>;
     stats(): Promise<{
         totalPayments: bigint;
         totalLinks: bigint;
@@ -152,13 +206,14 @@ export interface backendInterface {
         context: Uint8Array;
         response: HttpResponsePayload;
     }): Promise<HttpResponsePayload>;
+    withdraw(toLedgerAccount: string, amount: bigint, method: PaymentMethod): Promise<Result>;
 }
-import type { Account as _Account, CreateLinkArgs as _CreateLinkArgs, Payment as _Payment, PaymentLinkInfo as _PaymentLinkInfo, PaymentMethod as _PaymentMethod, PaymentStatus as _PaymentStatus, Result as _Result } from "./declarations/backend.did";
+import type { Account as _Account, CreateLinkArgs as _CreateLinkArgs, Payment as _Payment, PaymentLinkInfo as _PaymentLinkInfo, PaymentMethod as _PaymentMethod, PaymentStatus as _PaymentStatus, Result as _Result, Result_1 as _Result_1, TransferError as _TransferError, TransferResult as _TransferResult } from "./declarations/backend.did";
 export class Backend implements backendInterface {
     constructor(private actor: ActorSubclass<_SERVICE>){}
-    async confirmPayment(arg0: ConfirmPaymentArgs): Promise<Result> {
+    async confirmPayment(arg0: ConfirmPaymentArgs): Promise<Result_1> {
         const result = await this.actor.confirmPayment(arg0);
-        return from_candid_Result_n1(result);
+        return from_candid_Result_1_n1(result);
     }
     async createLink(arg0: CreateLinkArgs): Promise<string> {
         const result = await this.actor.createLink(to_candid_CreateLinkArgs_n3(arg0));
@@ -192,6 +247,10 @@ export class Backend implements backendInterface {
         const result = await this.actor.linkPaymentHistory(arg0);
         return from_candid_vec_n17(result);
     }
+    async myBalance(arg0: Principal): Promise<bigint> {
+        const result = await this.actor.myBalance(arg0);
+        return result;
+    }
     async myLinks(): Promise<Array<PaymentLinkInfo>> {
         const result = await this.actor.myLinks();
         return from_candid_vec_n23(result);
@@ -199,6 +258,10 @@ export class Backend implements backendInterface {
     async reactivateLink(arg0: string): Promise<void> {
         const result = await this.actor.reactivateLink(arg0);
         return result;
+    }
+    async rescueFunds(arg0: Uint8Array, arg1: Account, arg2: bigint, arg3: Principal): Promise<TransferResult> {
+        const result = await this.actor.rescueFunds(arg0, to_candid_Account_n24(arg1), arg2, arg3);
+        return from_candid_TransferResult_n26(result);
     }
     async stats(): Promise<{
         totalPayments: bigint;
@@ -214,6 +277,10 @@ export class Backend implements backendInterface {
     }): Promise<HttpResponsePayload> {
         const result = await this.actor.transform(arg0);
         return result;
+    }
+    async withdraw(arg0: string, arg1: bigint, arg2: PaymentMethod): Promise<Result> {
+        const result = await this.actor.withdraw(arg0, arg1, to_candid_PaymentMethod_n5(arg2));
+        return from_candid_Result_n30(result);
     }
 }
 function from_candid_Account_n14(value: _Account): Account {
@@ -231,8 +298,17 @@ function from_candid_PaymentStatus_n20(value: _PaymentStatus): PaymentStatus {
 function from_candid_Payment_n18(value: _Payment): Payment {
     return from_candid_record_n19(value);
 }
-function from_candid_Result_n1(value: _Result): Result {
+function from_candid_Result_1_n1(value: _Result_1): Result_1 {
     return from_candid_variant_n2(value);
+}
+function from_candid_Result_n30(value: _Result): Result {
+    return from_candid_variant_n31(value);
+}
+function from_candid_TransferError_n28(value: _TransferError): TransferError {
+    return from_candid_variant_n29(value);
+}
+function from_candid_TransferResult_n26(value: _TransferResult): TransferResult {
+    return from_candid_variant_n27(value);
 }
 function from_candid_opt_n12(value: [] | [bigint]): bigint | null {
     return value.length === 0 ? null : value[0];
@@ -368,17 +444,163 @@ function from_candid_variant_n21(value: {
 }): PaymentStatus {
     return "expired" in value ? PaymentStatus.expired : "pending" in value ? PaymentStatus.pending : "confirmed" in value ? PaymentStatus.confirmed : value;
 }
+function from_candid_variant_n27(value: {
+    Ok: bigint;
+} | {
+    Err: _TransferError;
+}): {
+    __kind__: "Ok";
+    Ok: bigint;
+} | {
+    __kind__: "Err";
+    Err: TransferError;
+} {
+    return "Ok" in value ? {
+        __kind__: "Ok",
+        Ok: value.Ok
+    } : "Err" in value ? {
+        __kind__: "Err",
+        Err: from_candid_TransferError_n28(value.Err)
+    } : value;
+}
+function from_candid_variant_n29(value: {
+    GenericError: {
+        message: string;
+        error_code: bigint;
+    };
+} | {
+    TemporarilyUnavailable: null;
+} | {
+    BadBurn: {
+        min_burn_amount: bigint;
+    };
+} | {
+    Duplicate: {
+        duplicate_of: bigint;
+    };
+} | {
+    BadFee: {
+        expected_fee: bigint;
+    };
+} | {
+    CreatedInFuture: {
+        ledger_time: bigint;
+    };
+} | {
+    TooOld: null;
+} | {
+    InsufficientFunds: {
+        balance: bigint;
+    };
+}): {
+    __kind__: "GenericError";
+    GenericError: {
+        message: string;
+        error_code: bigint;
+    };
+} | {
+    __kind__: "TemporarilyUnavailable";
+    TemporarilyUnavailable: null;
+} | {
+    __kind__: "BadBurn";
+    BadBurn: {
+        min_burn_amount: bigint;
+    };
+} | {
+    __kind__: "Duplicate";
+    Duplicate: {
+        duplicate_of: bigint;
+    };
+} | {
+    __kind__: "BadFee";
+    BadFee: {
+        expected_fee: bigint;
+    };
+} | {
+    __kind__: "CreatedInFuture";
+    CreatedInFuture: {
+        ledger_time: bigint;
+    };
+} | {
+    __kind__: "TooOld";
+    TooOld: null;
+} | {
+    __kind__: "InsufficientFunds";
+    InsufficientFunds: {
+        balance: bigint;
+    };
+} {
+    return "GenericError" in value ? {
+        __kind__: "GenericError",
+        GenericError: value.GenericError
+    } : "TemporarilyUnavailable" in value ? {
+        __kind__: "TemporarilyUnavailable",
+        TemporarilyUnavailable: value.TemporarilyUnavailable
+    } : "BadBurn" in value ? {
+        __kind__: "BadBurn",
+        BadBurn: value.BadBurn
+    } : "Duplicate" in value ? {
+        __kind__: "Duplicate",
+        Duplicate: value.Duplicate
+    } : "BadFee" in value ? {
+        __kind__: "BadFee",
+        BadFee: value.BadFee
+    } : "CreatedInFuture" in value ? {
+        __kind__: "CreatedInFuture",
+        CreatedInFuture: value.CreatedInFuture
+    } : "TooOld" in value ? {
+        __kind__: "TooOld",
+        TooOld: value.TooOld
+    } : "InsufficientFunds" in value ? {
+        __kind__: "InsufficientFunds",
+        InsufficientFunds: value.InsufficientFunds
+    } : value;
+}
+function from_candid_variant_n31(value: {
+    ok: bigint;
+} | {
+    err: string;
+}): {
+    __kind__: "ok";
+    ok: bigint;
+} | {
+    __kind__: "err";
+    err: string;
+} {
+    return "ok" in value ? {
+        __kind__: "ok",
+        ok: value.ok
+    } : "err" in value ? {
+        __kind__: "err",
+        err: value.err
+    } : value;
+}
 function from_candid_vec_n17(value: Array<_Payment>): Array<Payment> {
     return value.map((x)=>from_candid_Payment_n18(x));
 }
 function from_candid_vec_n23(value: Array<_PaymentLinkInfo>): Array<PaymentLinkInfo> {
     return value.map((x)=>from_candid_PaymentLinkInfo_n8(x));
 }
+function to_candid_Account_n24(value: Account): _Account {
+    return to_candid_record_n25(value);
+}
 function to_candid_CreateLinkArgs_n3(value: CreateLinkArgs): _CreateLinkArgs {
     return to_candid_record_n4(value);
 }
 function to_candid_PaymentMethod_n5(value: PaymentMethod): _PaymentMethod {
     return to_candid_variant_n6(value);
+}
+function to_candid_record_n25(value: {
+    owner: Principal;
+    subaccount?: Uint8Array;
+}): {
+    owner: Principal;
+    subaccount: [] | [Uint8Array];
+} {
+    return {
+        owner: value.owner,
+        subaccount: value.subaccount ? candid_some(value.subaccount) : candid_none()
+    };
 }
 function to_candid_record_n4(value: {
     method: PaymentMethod;

@@ -28,7 +28,7 @@ function makeActor(identity?: Identity) {
   });
 }
 
-type View = "home" | "create" | "dashboard" | "pay";
+type View = "home" | "create" | "dashboard" | "pay" | "wallet";
 
 function formatAmount(amount: bigint, method: string): string {
   const whole = amount / 100_000_000n;
@@ -91,6 +91,11 @@ export default function App() {
   const [payStep, setPayStep] = useState<"info" | "address" | "confirm">("info");
   const [confirmLoading, setConfirmLoading] = useState(false);
   const [usdEstimate, setUsdEstimate] = useState("");
+  const [icpBalance, setIcpBalance] = useState<bigint | null>(null);
+  const [ckbtcBalance, setCkbtcBalance] = useState<bigint | null>(null);
+  const [withdrawTo, setWithdrawTo] = useState("");
+  const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [withdrawMethod, setWithdrawMethod] = useState<"icp" | "ckbtc">("icp");
 
   // Form state
   const [title, setTitle] = useState("");
@@ -181,11 +186,29 @@ export default function App() {
     }
   }, [authClient, isAuthenticated]);
 
+  const loadBalances = useCallback(async () => {
+    if (!authClient || !isAuthenticated) return;
+    try {
+      const actor = makeActor(authClient.getIdentity());
+      const [icp, btc] = await Promise.all([
+        actor.myBalance(Principal.fromText("ryjl3-tyaaa-aaaaa-aaaba-cai")),
+        actor.myBalance(Principal.fromText("mxzaz-hqaaa-aaaar-qaada-cai")),
+      ]);
+      setIcpBalance(icp);
+      setCkbtcBalance(btc);
+    } catch {
+      // balance check can fail, non-critical
+    }
+  }, [authClient, isAuthenticated]);
+
   useEffect(() => {
     if (view === "dashboard" && isAuthenticated) {
       loadMyLinks();
     }
-  }, [view, isAuthenticated, loadMyLinks]);
+    if (view === "wallet" && isAuthenticated) {
+      loadBalances();
+    }
+  }, [view, isAuthenticated, loadMyLinks, loadBalances]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -260,6 +283,12 @@ export default function App() {
                   className="px-4 py-2 bg-surface-light text-white rounded-lg hover:bg-surface transition cursor-pointer"
                 >
                   Dashboard
+                </button>
+                <button
+                  onClick={() => setView("wallet")}
+                  className="px-4 py-2 bg-surface-light text-white rounded-lg hover:bg-surface transition cursor-pointer"
+                >
+                  Wallet
                 </button>
                 <span className="text-xs text-gray-500 max-w-32 truncate">
                   {principal}
@@ -686,6 +715,147 @@ export default function App() {
             ) : (
               <div className="text-gray-500">Loading payment link...</div>
             )}
+          </div>
+        )}
+
+        {/* Wallet View */}
+        {view === "wallet" && isAuthenticated && (
+          <div className="max-w-lg mx-auto">
+            <h2 className="text-2xl font-bold mb-6">Wallet</h2>
+
+            <div className="bg-surface rounded-xl p-5 border border-white/5 mb-6">
+              <h3 className="text-sm text-gray-400 mb-3">Your Balances</h3>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-300">ICP</span>
+                  <span className="text-brand font-bold text-xl">
+                    {icpBalance !== null
+                      ? formatAmount(icpBalance, "icp")
+                      : "Loading..."}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-300">ckBTC</span>
+                  <span className="text-brand font-bold text-xl">
+                    {ckbtcBalance !== null
+                      ? formatAmount(ckbtcBalance, "ckbtc")
+                      : "Loading..."}
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={loadBalances}
+                className="mt-3 text-xs text-gray-500 hover:text-white cursor-pointer bg-transparent border-none"
+              >
+                Refresh balances
+              </button>
+            </div>
+
+            <div className="bg-surface rounded-xl p-5 border border-white/5 mb-4">
+              <h3 className="text-sm text-gray-400 mb-1">Your Principal</h3>
+              <div
+                className="font-mono text-xs text-brand break-all cursor-pointer hover:bg-white/5 rounded p-2 transition"
+                onClick={() => {
+                  navigator.clipboard.writeText(principal);
+                  setSuccess("Principal copied!");
+                }}
+              >
+                {principal}
+              </div>
+              <p className="text-xs text-gray-600 mt-1">Click to copy. Use this to receive tokens from others.</p>
+            </div>
+
+            <div className="bg-surface rounded-xl p-5 border border-white/5">
+              <h3 className="font-semibold mb-4">Send Tokens</h3>
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  setLoading(true);
+                  setError("");
+                  setSuccess("");
+                  try {
+                    const actor = makeActor(authClient!.getIdentity());
+                    const amountE8s = BigInt(
+                      Math.round(parseFloat(withdrawAmount) * 100_000_000)
+                    );
+                    const result = await actor.withdraw(
+                      withdrawTo,
+                      amountE8s,
+                      withdrawMethod === "icp"
+                        ? PaymentMethod.icp
+                        : PaymentMethod.ckbtc
+                    );
+                    const r = result as { __kind__: string; ok?: bigint; err?: string };
+                    if (r.__kind__ === "ok") {
+                      setSuccess(`Sent! Block index: ${r.ok}`);
+                      setWithdrawTo("");
+                      setWithdrawAmount("");
+                      loadBalances();
+                    } else {
+                      setError(r.err || "Transfer failed");
+                    }
+                  } catch (e: unknown) {
+                    setError((e as Error).message || "Transfer failed");
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+                className="space-y-3"
+              >
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">
+                    Recipient Principal
+                  </label>
+                  <input
+                    type="text"
+                    value={withdrawTo}
+                    onChange={(e) => setWithdrawTo(e.target.value)}
+                    placeholder="xxxxx-xxxxx-xxxxx-xxxxx-xxx"
+                    required
+                    className="w-full px-4 py-3 bg-bg border border-white/10 rounded-lg text-white placeholder-gray-600 focus:outline-none focus:border-brand font-mono text-xs"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-1">
+                      Amount
+                    </label>
+                    <input
+                      type="number"
+                      value={withdrawAmount}
+                      onChange={(e) => setWithdrawAmount(e.target.value)}
+                      placeholder="1.0"
+                      step="0.00000001"
+                      min="0.00000001"
+                      required
+                      className="w-full px-4 py-3 bg-bg border border-white/10 rounded-lg text-white placeholder-gray-600 focus:outline-none focus:border-brand"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-1">
+                      Token
+                    </label>
+                    <select
+                      value={withdrawMethod}
+                      onChange={(e) =>
+                        setWithdrawMethod(e.target.value as "icp" | "ckbtc")
+                      }
+                      className="w-full px-4 py-3 bg-bg border border-white/10 rounded-lg text-white focus:outline-none focus:border-brand"
+                    >
+                      <option value="icp">ICP</option>
+                      <option value="ckbtc">ckBTC</option>
+                    </select>
+                  </div>
+                </div>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-3 bg-brand text-black font-bold rounded-lg hover:bg-brand-dark transition disabled:opacity-50 cursor-pointer"
+                >
+                  {loading ? "Sending..." : "Send"}
+                </button>
+              </form>
+            </div>
           </div>
         )}
       </main>

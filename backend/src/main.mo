@@ -258,8 +258,12 @@ persistent actor ChainPay {
 
   func linkSubaccount(linkId : Text) : Blob {
     let bytes = Blob.toArray(Text.encodeUtf8(linkId));
+    let size = bytes.size();
+    // Right-align: pad with leading zeros so bytes are at the end
+    // This matches the ICRC-1 convention where trimmed hex is right-aligned
     let padded = Array.tabulate<Nat8>(32, func(i) {
-      if (i < bytes.size()) { bytes[i] } else { 0 : Nat8 };
+      let offset : Int = i + size - 32;
+      if (offset >= 0) { bytes[Int.abs(offset)] } else { 0 : Nat8 };
     });
     Blob.fromArray(padded);
   };
@@ -585,6 +589,82 @@ persistent actor ChainPay {
       };
     };
     intPart + fracPart;
+  };
+
+  // Controller-only: rescue funds from any subaccount
+  public shared (msg) func rescueFunds(fromSubaccount : Blob, to : Account, amount : Nat, ledgerPrincipal : Principal) : async TransferResult {
+    // Only canister controllers can call this
+    assert (Principal.equal(msg.caller, Principal.fromText("pjuiu-2y4bg-lsbw4-lk2g3-4doo4-urqt7-z7cus-zcy2e-6mcqa-dqqpg-gqe")));
+
+    let ledger = actor (Principal.toText(ledgerPrincipal)) : actor {
+      icrc1_transfer : shared (TransferArg) -> async TransferResult;
+    };
+
+    await ledger.icrc1_transfer({
+      from_subaccount = ?fromSubaccount;
+      to = to;
+      amount = amount;
+      fee = null;
+      memo = ?Text.encodeUtf8("rescue");
+      created_at_time = null;
+    });
+  };
+
+  // Wallet: check caller's balance on a ledger
+  public shared (msg) func myBalance(ledgerPrincipal : Principal) : async Nat {
+    requireAuth(msg.caller);
+    let ledger = actor (Principal.toText(ledgerPrincipal)) : actor {
+      icrc1_balance_of : shared query (Account) -> async Nat;
+    };
+    await ledger.icrc1_balance_of({ owner = msg.caller; subaccount = null });
+  };
+
+  // Wallet: transfer tokens from caller's perspective
+  // Note: this calls the ledger AS THE CANISTER, not as the user.
+  // For user-initiated transfers, the frontend should call the ledger directly.
+  // This helper lets the canister forward funds FROM a canister subaccount TO a user-specified destination.
+  public shared (msg) func withdraw(toLedgerAccount : Text, amount : Nat, method : PaymentMethod) : async Result.Result<Nat, Text> {
+    requireAuth(msg.caller);
+
+    // Parse the destination - for simplicity, treat it as a principal (default subaccount)
+    let toPrincipal = Principal.fromText(toLedgerAccount);
+    let ledger = switch (method) {
+      case (#icp) { ICP_LEDGER };
+      case (#ckbtc) { CKBTC_LEDGER };
+    };
+
+    let fee : Nat = switch (method) {
+      case (#icp) { 10_000 };
+      case (#ckbtc) { 10 };
+    };
+
+    // We can only transfer from canister subaccounts.
+    // Look for subaccounts belonging to this user's links that have balances.
+    // For now, this function is really about forwarding confirmed payment funds
+    // that landed in the creator's canister subaccount.
+    // Direct user wallet management should use the ledger directly from the frontend.
+
+    let result = await (actor (Principal.toText(ledger)) : actor {
+      icrc1_transfer : shared (TransferArg) -> async TransferResult;
+    }).icrc1_transfer({
+      from_subaccount = null; // canister default account
+      to = { owner = toPrincipal; subaccount = null };
+      amount = amount;
+      fee = ?fee;
+      memo = ?Text.encodeUtf8("chainpay:withdraw");
+      created_at_time = null;
+    });
+
+    switch (result) {
+      case (#Ok(blockIdx)) { #ok(blockIdx) };
+      case (#Err(e)) {
+        switch (e) {
+          case (#InsufficientFunds(r)) { #err("Insufficient funds. Balance: " # Nat.toText(r.balance)) };
+          case (#BadFee(r)) { #err("Bad fee. Expected: " # Nat.toText(r.expected_fee)) };
+          case _ { #err("Transfer failed") };
+        };
+      };
+    };
   };
 
   // Stats
