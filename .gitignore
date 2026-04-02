@@ -1,0 +1,22 @@
+
+.vscode/
+.idea/
+**/*~
+
+# Mac OSX temporary files
+.DS_Store
+**/.DS_Store
+
+# environment variables
+.env
+
+# Node modules
+node_modules/
+
+# Build artifacts
+dist/
+
+# icp-cli local cache (safe to delete, rebuilt on next build/deploy)
+.icp/cache/
+# Do NOT ignore .icp/data/ — it stores mainnet canister ID mappings.
+# See: https://github.com/dfinity/icp-cli/blob/main/docs/concepts/project-model.md#whats-safe-to-delete

@@ -1,0 +1,119 @@
+type Result = 
+ variant {
+   err: text;
+   ok: text;
+ };
+type PriceData = 
+ record {
+   btcUsd: float64;
+   icpUsd: float64;
+   updatedAt: int;
+ };
+type PaymentStatus = 
+ variant {
+   confirmed;
+   expired;
+   pending;
+ };
+type PaymentMethod = 
+ variant {
+   ckbtc;
+   icp;
+ };
+type PaymentLinkInfo = 
+ record {
+   active: bool;
+   amount: nat;
+   createdAt: int;
+   creator: principal;
+   description: text;
+   expiresAt: opt int;
+   id: text;
+   method: PaymentMethod;
+   paymentCount: nat;
+   title: text;
+   totalReceived: nat;
+ };
+type Payment = 
+ record {
+   amount: nat;
+   confirmedAt: opt int;
+   createdAt: int;
+   id: text;
+   linkId: text;
+   method: PaymentMethod;
+   payer: principal;
+   status: PaymentStatus;
+   txId: opt nat;
+ };
+type HttpResponsePayload = 
+ record {
+   body: blob;
+   headers: vec HttpHeader;
+   status: nat;
+ };
+type HttpResponse = 
+ record {
+   body: blob;
+   headers: vec record {
+                  text;
+                  text;
+                };
+   status_code: nat16;
+ };
+type HttpRequest = 
+ record {
+   body: blob;
+   headers: vec record {
+                  text;
+                  text;
+                };
+   method: text;
+   url: text;
+ };
+type HttpHeader = 
+ record {
+   name: text;
+   value: text;
+ };
+type CreateLinkArgs = 
+ record {
+   amount: nat;
+   description: text;
+   expiresAt: opt int;
+   method: PaymentMethod;
+   title: text;
+ };
+type ConfirmPaymentArgs = 
+ record {
+   blockIndex: nat;
+   linkId: text;
+ };
+type Account = 
+ record {
+   owner: principal;
+   subaccount: opt blob;
+ };
+service : {
+  confirmPayment: (args: ConfirmPaymentArgs) -> (Result);
+  createLink: (args: CreateLinkArgs) -> (text);
+  deactivateLink: (linkId: text) -> ();
+  getCkbtcDepositAddress: (linkId: text) -> (text);
+  getLink: (linkId: text) -> (opt PaymentLinkInfo) query;
+  getPaymentAddress: (linkId: text) -> (opt Account) query;
+  getUsdPrices: () -> (PriceData);
+  http_request: (req: HttpRequest) -> (HttpResponse) query;
+  linkPaymentHistory: (linkId: text) -> (vec Payment) query;
+  myLinks: () -> (vec PaymentLinkInfo) query;
+  reactivateLink: (linkId: text) -> ();
+  stats: () ->
+   (record {
+      activeLinks: nat;
+      totalLinks: nat;
+      totalPayments: nat;
+    }) query;
+  transform: (record {
+                context: blob;
+                response: HttpResponsePayload;
+              }) -> (HttpResponsePayload) query;
+}

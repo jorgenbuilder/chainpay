@@ -1,0 +1,19 @@
+{
+  "name": "chainpay-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "generate": "icp-bindgen --did-file ../backend/backend.did --out-dir ./declarations --force"
+  },
+  "devDependencies": {
+    "@dfinity/pic": "^0.21.0",
+    "@dfinity/principal": "^2.3.0",
+    "@dfinity/candid": "^2.3.0",
+    "@dfinity/agent": "^2.3.0",
+    "@icp-sdk/bindgen": "~0.3.0",
+    "@icp-sdk/core": "~5.2.0",
+    "vitest": "^3.1.1"
+  }
+}
