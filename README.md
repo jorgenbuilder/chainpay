@@ -68,27 +68,29 @@ This project exercises **9 ICP skills** - the most of any day:
 | Frontend | React 19 + Vite 7 + Tailwind CSS 4 |
 | Auth | Internet Identity via `@icp-sdk/auth` |
 | Bindings | `@icp-sdk/bindgen` (Vite plugin + CLI) |
-| Testing | PICjs (`@dfinity/pic`) + Vitest (31 tests) |
+| Testing | PICjs (`@dfinity/pic`) + Vitest (41 tests) |
 | Tooling | icp-cli 0.2.2 |
 
 ## Test Suite
 
-31 PICjs tests covering:
+41 PICjs tests covering:
 
-- Link creation (validation, auth, sequential IDs)
+- Link creation (validation, auth, sequential IDs, edge cases)
 - Link retrieval (public access, not-found handling)
 - Payment addresses (unique subaccounts per link)
 - User isolation (myLinks only shows caller's links)
 - Link lifecycle (deactivate/reactivate, owner-only guards)
 - Expiry enforcement (time advancement in PocketIC)
 - Stats endpoint
-- HTTP interface (payment pages, stats JSON, 404s, inactive links)
+- HTTP interface (payment pages, ckBTC rendering, HTML escaping, fractional amounts, stats JSON, 404s, query params)
 - Payment history access control
+- Concurrent multi-user operations
+- Input validation boundaries (100-char title, 500-char description, min/max amounts)
 
 ```
- PASS  chainpay.spec.ts (31 tests) 1089ms
+ PASS  chainpay.spec.ts (41 tests) 1295ms
  Test Files  1 passed (1)
-      Tests  31 passed (31)
+      Tests  41 passed (41)
 ```
 
 ## Running Locally
