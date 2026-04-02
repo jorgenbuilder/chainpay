@@ -8,6 +8,7 @@
 ---
 
 ### Friction Point 1: `icp new` project creation location
+
 **Time lost:** ~3 min
 **Category:** icp-cli
 
@@ -18,6 +19,7 @@ When running `icp new --subfolder hello-world ... --silent chain-pay` from a par
 ---
 
 ### Friction Point 2: mo:core API differences from mo:base
+
 **Time lost:** ~8 min
 **Category:** motoko skill
 
@@ -35,43 +37,8 @@ The motoko skill document mentions some of these but not all. Had to read the mo
 
 ---
 
-### Friction Point 3: Motoko char literal matching
-**Time lost:** ~2 min
-**Category:** motoko
+### Friction Point 3: @icp-sdk/auth version and import path
 
-`case '"' { ... }` causes a syntax error in Motoko switch expressions. Had to use `Char.toNat32(c) == 34` as a workaround. This is a minor language ergonomics issue.
-
----
-
-### Friction Point 4: icp-cli identity vs dfx identity mismatch
-**Time lost:** ~5 min
-**Category:** icp-cli
-
-icp-cli and dfx maintain separate identity stores. The default identity in icp-cli (`clanker-paste`) was different from dfx's default identity. This meant:
-- ICP balance showed 0.86 ICP in dfx but 0 in icp-cli
-- Cycles minting failed because icp-cli was looking at the wrong account
-- Had to import the dfx default identity PEM file into icp-cli
-
-**Suggestion:** icp-cli should either share the dfx identity store or clearly document this divergence during migration.
-
----
-
-### Friction Point 5: Canister creation minimum cycles
-**Time lost:** ~3 min
-**Category:** icp-cli, cycles-management
-
-`icp deploy -e ic` defaults to requesting 2T cycles per canister. When balance was only ~1T, deployment failed. The error message was clear, but:
-- `--cycles 300B` also failed because the minimum to CREATE a canister is 500B
-- Even with 1T per canister, INSTALL failed because the canister had insufficient cycles for the WASM installation
-- Had to use `icp canister top-up` which uses `--amount` flag (not `--cycles` like `icp deploy`)
-
-Inconsistent flag naming across subcommands is confusing.
-
-**Suggestion:** Standardize `--cycles` vs `--amount` across all icp-cli subcommands. Consider auto-topping up canisters during deploy if needed.
-
----
-
-### Friction Point 6: @icp-sdk/auth version and import path
 **Time lost:** ~3 min
 **Category:** internet-identity skill
 
@@ -81,24 +48,8 @@ The template project uses `@icp-sdk/core@~5.2.0` but `@icp-sdk/auth` only has ve
 
 ---
 
-### Friction Point 7: @icp-sdk/bindgen generates wrapper types that differ from raw Candid types
-**Time lost:** ~5 min
-**Category:** icp-cli (bindgen)
+### Friction Point 4: ICRC-1 subaccount byte ordering caused lost funds
 
-The generated `backend.ts` wrapper creates:
-- `enum PaymentMethod { icp = "icp", ckbtc = "ckbtc" }` instead of `{ icp: null } | { ckbtc: null }`
-- `Option<T>` with `__kind__: "Some" | "None"` instead of `[] | [T]`
-- `PaymentLinkInfo | null` instead of `[] | [PaymentLinkInfo]`
-
-This means you can't use the raw Candid types from `declarations/backend.did.d.ts` with the wrapper. You must use the wrapper's own types. The PICjs tests (which use the raw Candid layer) had to use different types than the frontend.
-
-Not necessarily wrong, but the type incompatibility between `declarations/*.did.d.ts` and the wrapper `backend.ts` caused confusing TypeScript errors.
-
-**Suggestion:** Document that `@icp-sdk/bindgen` wraps Candid types into more ergonomic forms and that the two type systems aren't interchangeable.
-
----
-
-### Friction Point 8: ICRC-1 subaccount byte ordering caused lost funds
 **Time lost:** ~20 min
 **Category:** icrc-ledger, agent error
 
@@ -114,7 +65,8 @@ Fixed by right-aligning subaccount bytes and adding a controller rescue function
 
 ---
 
-### Friction Point 9: No wallet functionality = unusable payment flow
+### Friction Point 5: No wallet functionality = unusable payment flow
+
 **Time lost:** ~15 min
 **Category:** UX / agent oversight
 
@@ -126,28 +78,11 @@ Fixed by adding a Wallet view with balance display and send functionality.
 
 ---
 
-### Friction Point 10: Initial payment address display was raw technical data
+### Friction Point 6: Initial payment address display was raw technical data
+
 **Time lost:** ~10 min
 **Category:** UX / agent oversight
 
 The first version of "Show Payment Address" displayed raw `Owner=52253-7yaaa... Subaccount=0x31000...` text, which is completely unusable for end users. Had to redesign into a proper 3-step flow with ICRC-1 formatted addresses and click-to-copy.
 
 The agent's default instinct is to show debug-level data. Payment UX must be self-explanatory and wallet-compatible.
-
----
-
-### What Went Well
-
-1. **icp-cli build/deploy pipeline** - Once configured, `icp build` and `icp deploy` worked flawlessly. The recipe system is much cleaner than raw dfx config.
-
-2. **PICjs testing** - Setting up tests was straightforward once I knew the pattern. 31 tests all pass. The `@dfinity/pic` API is well-designed.
-
-3. **Motoko persistent actor** - The `persistent actor` pattern is excellent. No `pre_upgrade`/`post_upgrade` hooks needed. All state automatically survives upgrades.
-
-4. **`icp cycles mint`** - Converting ICP to cycles was simple and fast once using the right identity.
-
-5. **HTTPS outcalls** - The transform function pattern for consensus was well-documented in the skill and worked on first try.
-
-6. **Canister environment variables** - The `PUBLIC_CANISTER_ID:backend` injection and `ic_env` cookie pattern works well for frontend-backend wiring.
-
-7. **HTTP interface** - Serving HTML payment pages from `http_request` on the backend canister is a powerful ICP-unique capability.
